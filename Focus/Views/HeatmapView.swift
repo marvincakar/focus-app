@@ -3,34 +3,92 @@ import SwiftUI
 struct HeatmapView: View {
     @EnvironmentObject var sessionStore: SessionStore
 
-    private let weeks = 52
+    private let visibleWeeks = 18
     private let cellSize: CGFloat = 16
     private let cellSpacing: CGFloat = 4
+    private let stepWeeks = 4
+    private let minOffset = -260   // ~5 years back
+    private let maxOffset = 0      // default (today centered) is the furthest forward
     private let calendar = Calendar.current
 
-    private var gridStartDate: Date {
+    // weekOffset == 0 -> today's week sits in the center column
+    @State private var weekOffset = 0
+    @State private var hoveredCol: Int? = nil
+
+    private var halfVisible: Int { visibleWeeks / 2 }
+
+    private var currentWeekSunday: Date {
         let today = calendar.startOfDay(for: Date())
         let weekday = calendar.component(.weekday, from: today)
-        let daysToSunday = weekday - 1
-        let lastSunday = calendar.date(byAdding: .day, value: -daysToSunday, to: today)!
-        return calendar.date(byAdding: .day, value: -(weeks - 1) * 7, to: lastSunday)!
+        return calendar.date(byAdding: .day, value: -(weekday - 1), to: today)!
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: cellSpacing) {
-            ForEach(0..<weeks, id: \.self) { week in
-                VStack(spacing: cellSpacing) {
-                    ForEach(0..<7, id: \.self) { day in
-                        let date = dateFor(week: week, day: day)
-                        HeatmapCell(date: date, count: sessionStore.sessionCount(for: date), cellSize: cellSize)
+        VStack(spacing: 10) {
+            Text(rangeLabel)
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundColor(Color("TextSecondary"))
+
+            HStack(spacing: 12) {
+                arrowButton(systemName: "chevron.left", disabled: weekOffset <= minOffset) {
+                    weekOffset = max(minOffset, weekOffset - stepWeeks)
+                }
+
+                HStack(alignment: .top, spacing: cellSpacing) {
+                    ForEach(0..<visibleWeeks, id: \.self) { col in
+                        VStack(spacing: cellSpacing) {
+                            ForEach(0..<7, id: \.self) { day in
+                                let date = dateFor(col: col, day: day)
+                                HeatmapCell(
+                                    date: date,
+                                    count: sessionStore.sessionCount(for: date),
+                                    cellSize: cellSize
+                                ) { hovering in
+                                    hoveredCol = hovering ? col : (hoveredCol == col ? nil : hoveredCol)
+                                }
+                            }
+                        }
+                        .zIndex(hoveredCol == col ? 1 : 0)
                     }
+                }
+
+                arrowButton(systemName: "chevron.right", disabled: weekOffset >= maxOffset) {
+                    weekOffset = min(maxOffset, weekOffset + stepWeeks)
                 }
             }
         }
     }
 
-    private func dateFor(week: Int, day: Int) -> Date {
-        calendar.date(byAdding: .day, value: week * 7 + day, to: gridStartDate) ?? Date()
+    private func arrowButton(systemName: String, disabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(disabled ? Color("TextSecondary").opacity(0.3) : Color("TextPrimary"))
+                .frame(width: 28, height: 28)
+                .background(Color("ButtonBg"), in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+    }
+
+    private func columnWeekStart(_ col: Int) -> Date {
+        let offsetWeeks = (weekOffset - halfVisible) + col
+        return calendar.date(byAdding: .day, value: offsetWeeks * 7, to: currentWeekSunday) ?? currentWeekSunday
+    }
+
+    private func dateFor(col: Int, day: Int) -> Date {
+        calendar.date(byAdding: .day, value: day, to: columnWeekStart(col)) ?? currentWeekSunday
+    }
+
+    private var rangeLabel: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM yyyy"
+        let first = columnWeekStart(0)
+        let last = columnWeekStart(visibleWeeks - 1)
+        let firstStr = formatter.string(from: first)
+        let lastStr = formatter.string(from: last)
+        return firstStr == lastStr ? firstStr : "\(firstStr) – \(lastStr)"
     }
 }
 
@@ -38,6 +96,7 @@ struct HeatmapCell: View {
     let date: Date
     let count: Int
     let cellSize: CGFloat
+    var onHover: (Bool) -> Void = { _ in }
 
     @State private var isHovered = false
     private let calendar = Calendar.current
@@ -80,7 +139,27 @@ struct HeatmapCell: View {
                 RoundedRectangle(cornerRadius: 2)
                     .strokeBorder(isHovered ? Color("TextSecondary").opacity(0.5) : Color.clear, lineWidth: 1)
             )
-            .onHover { hovering in isHovered = hovering }
-            .help(tooltipText)
+            .onHover { hovering in
+                isHovered = hovering
+                onHover(hovering)
+            }
+            .overlay(alignment: .bottom) {
+                if isHovered {
+                    Text(tooltipText)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(Color("TextPrimary"))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color("ButtonBg"))
+                                .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+                        )
+                        .fixedSize()
+                        .offset(y: -(cellSize + 6))
+                        .zIndex(1)
+                        .allowsHitTesting(false)
+                }
+            }
     }
 }

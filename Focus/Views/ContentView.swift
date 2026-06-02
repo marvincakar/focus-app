@@ -69,15 +69,15 @@ struct StreakBadge: View {
     let streak: Int
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 6) {
             Text("🔥")
-                .font(.system(size: 14))
+                .font(.system(size: 20))
             Text("\(streak)")
-                .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                .font(.system(size: 20, weight: .semibold, design: .monospaced))
                 .foregroundColor(Color("TextPrimary"))
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
         .background(Color("ButtonBg"), in: Capsule())
     }
 }
